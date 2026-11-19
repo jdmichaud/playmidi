@@ -884,6 +884,44 @@ void sync_song_start(void)
   SDL_UnlockAudioDevice(sdl_dev);
 }
 
+/* the song time (ms) the soft synth has rendered up to; returns 0 if it is
+ * not running.  Pacing by this instead of the system clock keeps playback
+ * locked to the audio device, whatever its clock rate */
+int audio_song_ms(Sint32 *ms)
+{
+  Uint64 pos;
+
+  if (sdl_dev == 0 || SDL_GetAudioDeviceStatus(sdl_dev) != SDL_AUDIO_PLAYING) {
+    return 0;
+  }
+  SDL_LockAudioDevice(sdl_dev);
+  pos = samplepos;
+  SDL_UnlockAudioDevice(sdl_dev);
+  *ms = (Sint32)((Sint64)(pos - song_base) * 1000 / rate);
+  return 1;
+}
+
+/* nonzero while queued events or sounding voices remain to be rendered */
+int sdl_dev_busy(void)
+{
+  int j, active = 0;
+
+  if (sdl_dev == 0 || SDL_GetAudioDeviceStatus(sdl_dev) != SDL_AUDIO_PLAYING) {
+    return 0;
+  }
+  SDL_LockAudioDevice(sdl_dev);
+  if (tseqh != tseqt) {
+    active++;
+  }
+  for (j = 0; j < POLYMAX && !active; j++) {
+    if (voice[j].endstamp > samplepos) {
+      active++;
+    }
+  }
+  SDL_UnlockAudioDevice(sdl_dev);
+  return active;
+}
+
 
 struct sysex_stuff {
   int bytes; // minimum bytes needed to dispatch handler

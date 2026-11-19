@@ -34,11 +34,29 @@ extern void showevent(int, unsigned char *, int);
 extern void init_show();
 extern int updatestatus();
 extern void sync_song_start(void);
+extern int audio_song_ms(Sint32 *);
+extern int sdl_dev_busy(void);
+
+/* events are timestamped for the soft synth and external midi, so they are
+ * queued this far ahead of real time */
+#define LOOKAHEAD_MS 100
+#define DRAIN_MAX_MS 5000	/* longest wait for releases at end of song */
 
 Uint32 ticks, tempo;
-Uint32 start_tick;
+Uint32 start_tick;	/* SDL_GetTicks() when the song started */
 struct timeval start_time;
 extern struct midi_packet *tseqh, *tseqt;
+
+/* current song time in ms: the soft synth's output position when it is
+ * running, so that pacing follows the audio clock */
+Sint32 song_now(void)
+{
+    Sint32 ms;
+
+    if (audio_song_ms(&ms))
+	return ms;
+    return (Sint32) (SDL_GetTicks() - start_tick);
+}
 
 unsigned long int rvl(struct miditrack *s)
 {
@@ -132,11 +150,15 @@ int playevents(void)
 		if (dtime > 40096.0)
 		    playing = 0;
 		else if ((int) current > ticks) {
-                    Uint32 timeout = start_tick + current;
-                    while (0 && !SDL_TICKS_PASSED(SDL_GetTicks(), timeout)) {
-                      SDL_Delay(timeout - SDL_GetTicks());
-                    }
-                    ticks = current;
+		    Sint32 wait;
+
+		    while (!graphics) {	/* updatestatus() paces -r */
+			wait = (Sint32) current - LOOKAHEAD_MS - song_now();
+			if (wait <= 0)
+			    break;
+			SDL_Delay(wait);
+		    }
+		    ticks = current;
 		    if (graphics)
 			if ((play_status = updatestatus()) != NO_EXIT)
 			    return play_status;
@@ -185,6 +207,13 @@ int playevents(void)
 	    seq[track].ticks = ~0;	/* mark track complete */
 	else
 	    seq[track].ticks += rvl(&seq[track]);
+    }
+    /* let queued events and note releases finish */
+    {
+	Uint32 deadline = SDL_GetTicks() + LOOKAHEAD_MS + DRAIN_MAX_MS;
+
+	while (sdl_dev_busy() && !SDL_TICKS_PASSED(SDL_GetTicks(), deadline))
+	    SDL_Delay(5);
     }
     return 1;
 }
