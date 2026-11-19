@@ -45,6 +45,7 @@ extern int gus_load(int);
 extern int readmidi(unsigned char *, off_t);
 extern void loadfm();
 extern void setup_show(int, char **);
+extern struct riffChunk *load_sf2(char *);
 extern void close_show(int);
 
 int main(argc, argv)
@@ -270,6 +271,11 @@ char **argv;
 		"  -L x     show events x ms after rendering (audio latency)\n");
 	exit(1);
     }
+    /* only the soft synth needs a soundfont; load it before -r takes
+     * over the screen so the warning stays visible */
+    if (play_ext != chanmask && load_sf2(sf2_filename) == NULL)
+	fprintf(stderr, "warning: no soundfont loaded from %s, using the "
+		"built-in synth (see -b)\n", sf2_filename);
     setup_show(argc, argv);
     /* play all filenames listed on command line */
     for (i = optind; i < argc;) {

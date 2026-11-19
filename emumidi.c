@@ -24,9 +24,7 @@ extern int play_ext;
 extern int chanmask, perc, dochan, MT32;
 extern Uint32 ticks;
 extern int useprog[16];
-extern char *sf2_filename;
 extern void seq_reset(int);
-extern void load_sf2(char *);
 
 #define CHANNEL (dochan ? chn : 0)
 
@@ -839,7 +837,6 @@ void open_sdl_dev(void)
   want.callback = fill_audio;
   want.userdata = NULL;
 
-  load_sf2(sf2_filename);
   /* otherwise SDL swallows SIGINT/SIGTERM and Ctrl-C can't stop playback */
   SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
   SDL_Init(SDL_INIT_AUDIO);
