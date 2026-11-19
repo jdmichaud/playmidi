@@ -39,6 +39,7 @@ extern void load_sf2(char *);
 static float rate = SAMPLERATE;
 int channels = 2;
 static SDL_AudioDeviceID sdl_dev = 0;
+static Uint64 song_base = 0;  // samplepos at which the current song started
 
 static Uint8 pdata[PACKET_LIST_BYTES];  // space for queued midi events
 struct midi_packet *tseq = (void *)pdata;  // queued midi events to play
@@ -309,7 +310,7 @@ struct midi_packet *next_pkt(struct midi_packet *p)
 static struct midi_packet *add_pkt(struct midi_packet *p)
 {
   /* timestamp is in samples since start of output */
-  p->timestamp = ticks * rate / 1000.0;
+  p->timestamp = song_base + ticks * rate / 1000.0;
   if (ISMIDI((p->data[0] & 0xf))) {
     midi_add_pkt(p);
     return p;
@@ -869,6 +870,18 @@ void start_sdl_dev(void)
 void stop_sdl_dev(void)
 {
   SDL_PauseAudioDevice(sdl_dev, 1);  /* stop filling audio buffer */
+}
+
+/* anchor event timestamps of the song about to start at the current
+ * output position; samplepos keeps counting across songs */
+void sync_song_start(void)
+{
+  if (sdl_dev == 0) {
+    return;
+  }
+  SDL_LockAudioDevice(sdl_dev);
+  song_base = samplepos;
+  SDL_UnlockAudioDevice(sdl_dev);
 }
 
 

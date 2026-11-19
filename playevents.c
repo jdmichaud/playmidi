@@ -33,6 +33,7 @@ extern void load_sysex(int, unsigned char *, int);
 extern void showevent(int, unsigned char *, int);
 extern void init_show();
 extern int updatestatus();
+extern void sync_song_start(void);
 
 Uint32 ticks, tempo;
 Uint32 start_tick;
@@ -73,8 +74,9 @@ int playevents(void)
     int play_status, playing = 1;
 
     init_show();
+    ticks = 0;		/* before seq_reset so its events are not delayed */
     seq_reset(0);
-    ticks = 0;
+    sync_song_start();
     start_tick = SDL_GetTicks();
     gettimeofday(&start_time, NULL);
     for (track = 0; track < ntrks && seq[track].data; track++) {
