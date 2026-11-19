@@ -37,6 +37,7 @@ extern void sync_song_start(void);
 extern Uint32 audio_latency_ms(void);
 extern int audio_song_ms(Sint32 *);
 extern int sdl_dev_busy(void);
+extern int show_latency;
 
 /* events are timestamped for the soft synth and external midi, so they are
  * queued this far ahead of real time; the display is deferred to match */
@@ -96,7 +97,7 @@ int playevents(void)
     ticks = 0;		/* before seq_reset so its events are not delayed */
     seq_reset(0);
     sync_song_start();
-    show_delay = audio_latency_ms();
+    show_delay = show_latency >= 0 ? show_latency : audio_latency_ms();
     start_tick = SDL_GetTicks();
     for (track = 0; track < ntrks && seq[track].data; track++) {
 	seq[track].index = seq[track].running_st = 0;

@@ -6,7 +6,7 @@
 .Nd midi file player
 .Sh SYNOPSIS
 .Nm playmidi
-.Op Fl vblicxpVtdPeDhEzMIRCr
+.Op Fl vblicxpVtdPeDhEzMIRCrL
 .Op Ar
 .Sh DESCRIPTION
 .Nm playmidi
@@ -87,6 +87,12 @@ to learn to play a song on some instrument (like piano).
 
 real time ncurses terminal playback graphics tracking of all
 notes on each channel and the current playback clock.
+.It Fl L#
+
+show events (with -r or -v) this many milliseconds after the soft
+synth renders them, to match the latency of the audio output.
+By default this is estimated from the audio buffer size; raise it
+if notes appear before they are heard, lower it if they appear late.
 .It Fl Px,[x]
 
 treat channel x as percussion in soft renderer.  This

@@ -31,6 +31,7 @@ int dochan = 1, play_ext = 0;
 int useprog[16], usevol[16];
 int graphics = 0, reverb = 0, chorus = 0;
 int find_header = 0, MT32 = 0;
+int show_latency = -1;		/* -L: display delay in ms, -1 = estimate */
 FILE *mfd;
 int ext_dev = 0;
 unsigned long int default_tempo;
@@ -64,7 +65,7 @@ char **argv;
     for (i = 0; i < 16; i++)
 	useprog[i] = usevol[i] = 0;	/* reset options */
     while ((i = getopt(argc, argv,
-		     "c:aA:b:C:dD:eE:F:gh:G:i:lMp:P:rR:t:vV:x:z")) != -1)
+		     "c:aA:b:C:dD:eE:F:gh:G:i:lL:Mp:P:rR:t:vV:x:z")) != -1)
 	switch (i) {
         case 'b':
             sf2_filename = strdup(optarg);
@@ -102,6 +103,13 @@ char **argv;
 	    break;
 	case 'M':
 	    MT32++;
+	    break;
+	case 'L':
+	    show_latency = atoi(optarg);
+	    if (show_latency < 0 || show_latency > 2000) {
+		fprintf(stderr, "option -L latency must be 0 - 2000 ms\n");
+		exit(1);
+	    }
 	    break;
 	case 'p':
 	    if (strchr(optarg, ',') == NULL) {	/* set all channels */
@@ -258,7 +266,8 @@ char **argv;
 		"  -I       show list of all GM programs (see -p)\n"
 		"  -R x     set initial reverb to x (0-127)\n"
 		"  -C x     set initial chorus to x (0-127)\n"
-		"  -r       real-time playback graphics\n");
+		"  -r       real-time playback graphics\n"
+		"  -L x     show events x ms after rendering (audio latency)\n");
 	exit(1);
     }
     setup_show(argc, argv);
