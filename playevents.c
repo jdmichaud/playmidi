@@ -11,7 +11,6 @@
    Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
  *************************************************************************/
 #include "playmidi.h"
-#include <sys/time.h>
 
 extern void seq_set_patch(int, int);
 extern void seq_key_pressure(int, int, int);
@@ -30,25 +29,27 @@ extern struct miditrack seq[MAXTRKS];
 extern float skew;
 extern unsigned long int default_tempo;
 extern void load_sysex(int, unsigned char *, int);
-extern void showevent(int, unsigned char *, int);
+extern void queue_show(Sint32, int, unsigned char *, int);
+extern int show_pending(void);
 extern void init_show();
 extern int updatestatus();
 extern void sync_song_start(void);
+extern Uint32 audio_latency_ms(void);
 extern int audio_song_ms(Sint32 *);
 extern int sdl_dev_busy(void);
 
 /* events are timestamped for the soft synth and external midi, so they are
- * queued this far ahead of real time */
+ * queued this far ahead of real time; the display is deferred to match */
 #define LOOKAHEAD_MS 100
 #define DRAIN_MAX_MS 5000	/* longest wait for releases at end of song */
 
 Uint32 ticks, tempo;
 Uint32 start_tick;	/* SDL_GetTicks() when the song started */
-struct timeval start_time;
+Uint32 show_delay;	/* ms from rendering audio to hearing it */
 extern struct midi_packet *tseqh, *tseqt;
 
 /* current song time in ms: the soft synth's output position when it is
- * running, so that pacing follows the audio clock */
+ * running, so that pacing and display follow the audio clock */
 Sint32 song_now(void)
 {
     Sint32 ms;
@@ -95,8 +96,8 @@ int playevents(void)
     ticks = 0;		/* before seq_reset so its events are not delayed */
     seq_reset(0);
     sync_song_start();
+    show_delay = audio_latency_ms();
     start_tick = SDL_GetTicks();
-    gettimeofday(&start_time, NULL);
     for (track = 0; track < ntrks && seq[track].data; track++) {
 	seq[track].index = seq[track].running_st = 0;
 	seq[track].ticks = rvl(&seq[track]);
@@ -152,16 +153,17 @@ int playevents(void)
 		else if ((int) current > ticks) {
 		    Sint32 wait;
 
-		    while (!graphics) {	/* updatestatus() paces -r */
+		    while (1) {
+			if (verbose || graphics)
+			    if ((play_status = updatestatus()) != NO_EXIT)
+				return play_status;
 			wait = (Sint32) current - LOOKAHEAD_MS - song_now();
 			if (wait <= 0)
 			    break;
-			SDL_Delay(wait);
+			/* keep polling keys and display while waiting */
+			SDL_Delay((verbose || graphics) && wait > 5 ? 5 : wait);
 		    }
 		    ticks = current;
-		    if (graphics)
-			if ((play_status = updatestatus()) != NO_EXIT)
-			    return play_status;
 		}
 	    }
 	    if (playing && seq[track].running_st > 0x7f && ISPLAYING(CHN)) {
@@ -197,9 +199,9 @@ int playevents(void)
 		    break;
 		}
             }
-	    if (verbose || graphics) {
-		showevent(seq[track].running_st, data, length);
-	    }
+	    if (verbose || graphics)	/* show it when it is heard */
+		queue_show(ticks + show_delay,
+			   seq[track].running_st, data, length);
 	}
 	/* this last little part queues up the next event time */
 	seq[track].index += length;
@@ -208,12 +210,18 @@ int playevents(void)
 	else
 	    seq[track].ticks += rvl(&seq[track]);
     }
-    /* let queued events and note releases finish */
+    /* let queued events, note releases and the display catch up */
     {
-	Uint32 deadline = SDL_GetTicks() + LOOKAHEAD_MS + DRAIN_MAX_MS;
+	Uint32 deadline = SDL_GetTicks() + LOOKAHEAD_MS + show_delay +
+	    DRAIN_MAX_MS;
 
-	while (sdl_dev_busy() && !SDL_TICKS_PASSED(SDL_GetTicks(), deadline))
+	while ((sdl_dev_busy() || show_pending()) &&
+	       !SDL_TICKS_PASSED(SDL_GetTicks(), deadline)) {
+	    if (verbose || graphics)
+		if ((play_status = updatestatus()) != NO_EXIT)
+		    return play_status;
 	    SDL_Delay(5);
+	}
     }
     return 1;
 }

@@ -39,6 +39,7 @@ extern void load_sf2(char *);
 static float rate = SAMPLERATE;
 int channels = 2;
 static SDL_AudioDeviceID sdl_dev = 0;
+static int sdl_samples = SAMPLELEN;  // samples per callback actually granted
 static Uint64 song_base = 0;  // samplepos at which the current song started
 
 static Uint8 pdata[PACKET_LIST_BYTES];  // space for queued midi events
@@ -852,6 +853,7 @@ void open_sdl_dev(void)
     fprintf(stderr, "warning: wanted %d, got %d\n", want.freq, have.freq);
     rate = have.freq;
   }
+  sdl_samples = have.samples;
   if (want.format != have.format) {
     fprintf(stderr, "warning: wanted 0x%x, got 0x%x\n",
             want.format, have.format);
@@ -899,6 +901,12 @@ int audio_song_ms(Sint32 *ms)
   SDL_UnlockAudioDevice(sdl_dev);
   *ms = (Sint32)((Sint64)(pos - song_base) * 1000 / rate);
   return 1;
+}
+
+/* rough time from rendering a sample to hearing it: double buffering */
+Uint32 audio_latency_ms(void)
+{
+  return sdl_dev ? 2 * sdl_samples * 1000 / rate : 0;
 }
 
 /* nonzero while queued events or sounding voices remain to be rendered */

@@ -16,7 +16,6 @@
 #include "playmidi.h"
 #include <ncurses.h>
 #include "gsvoices.h"
-#include <sys/time.h>
 #include <unistd.h>
 
 struct meta_event_names {
@@ -65,13 +64,12 @@ char *minsharp[15] =		/* name of minor key with 'x' sharps */
 
 extern int graphics, verbose, perc;
 extern int format, ntrks, division;
-extern Uint32 ticks;
+extern Uint32 show_delay;
+extern Sint32 song_now(void);
 extern char *filename;
 extern float skew;
 extern void seq_reset(int);
-extern struct timeval start_time;
 
-struct timeval now_time, want_time;
 char textbuf[1024], **nn;
 int i, ytxt, karaoke;
 
@@ -119,42 +117,63 @@ static char *gsfind(int pgm, int ch, int key)
   return rv;
 }
 
-int cdeltat(t1, t2)
-struct timeval *t1;
-struct timeval *t2;
-{
-    int d1, d2;
+/* events waiting to be shown at the song time they are heard */
+#define SHOWQ_LEN 4096
+static struct {
+    Sint32 when;
+    int cmd;
+    unsigned char *data;
+    int length;
+} showq[SHOWQ_LEN];
+static int showq_head, showq_tail;
 
-    d1 = t1->tv_sec - t2->tv_sec;
-    if((d2 = t1->tv_usec - t2->tv_usec) < 0)
-	(d2 += 1000000, d1 -= 1);
-    d2 /= 10000;
-    return (d2 + d1 * 100);
+void showevent(int, unsigned char *, int);
+
+static void show_next(void)
+{
+    showevent(showq[showq_tail].cmd, showq[showq_tail].data,
+	      showq[showq_tail].length);
+    showq_tail = (showq_tail + 1) % SHOWQ_LEN;
 }
+
+void queue_show(Sint32 when, int cmd, unsigned char *data, int length)
+{
+    int next = (showq_head + 1) % SHOWQ_LEN;
+
+    if (next == showq_tail)
+	show_next();		/* full: show the oldest one early */
+    showq[showq_head].when = when;
+    showq[showq_head].cmd = cmd;
+    showq[showq_head].data = data;
+    showq[showq_head].length = length;
+    showq_head = next;
+}
+
+int show_pending(void)
+{
+    return showq_head != showq_tail;
+}
+
+/* handle a pending key and show events that are now audible; returns
+ * NO_EXIT or how to move through the playlist (see playevents) */
 int updatestatus()
 {
-    int ch, d1, d2;
+    int ch, ms;
+    Sint32 now;
 
-    want_time.tv_sec = start_time.tv_sec + (ticks / 1000);
-    want_time.tv_usec = start_time.tv_usec + (ticks % 1000) * 1000;
-    if (want_time.tv_usec > 1000000)
-	(want_time.tv_usec -= 1000000, want_time.tv_sec++);
-
-    do {
+    if (graphics) {
 	attrset(A_BOLD);
 	if ((ch = getch()) != ERR)
 	    switch (ch) {
 	    case KEY_RIGHT:
 		if ((skew -= 0.01) < 0.25)
 		    skew = 0.25;
-		if (graphics)
-		    mvprintw(1, COLS - 6, "%0.2f", skew);
+		mvprintw(1, COLS - 6, "%0.2f", skew);
 		break;
 	    case KEY_LEFT:
 		if ((skew += 0.01) > 4)
 		    skew = 4.0;
-		if (graphics)
-		    mvprintw(1, COLS - 6, "%0.2f", skew);
+		mvprintw(1, COLS - 6, "%0.2f", skew);
 		break;
 	    case KEY_PPAGE:
 	    case KEY_UP:
@@ -175,17 +194,19 @@ int updatestatus()
 		return 1;	/* skip to next song */
 		break;
 	    }
-	gettimeofday(&now_time, NULL);
-	d1 = now_time.tv_sec - start_time.tv_sec;
-	d2 = now_time.tv_usec - start_time.tv_usec;
-	if (d2 < 0)
-	    (d2 += 1000000, d1 -= 1);
-	mvprintw(1, 0, "%02d:%02d.%d", d1 / 60, d1 % 60, d2 / 100000);
+    }
+    now = song_now();
+    while (show_pending() && now >= showq[showq_tail].when)
+	show_next();
+    if (graphics) {
+	ms = now - (Sint32) show_delay;
+	if (ms < 0)
+	    ms = 0;
+	attrset(A_BOLD);
+	mvprintw(1, 0, "%02d:%02d.%d", ms / 60000, ms / 1000 % 60,
+		 ms / 100 % 10);
 	refresh();
-	d1 = cdeltat(&want_time, &now_time);
-	if (0 && d1 > 10)
-	    usleep(100000);
-    } while (1 && d1 > 30);
+    }
     return NO_EXIT;
 }
 
@@ -364,6 +385,7 @@ void init_show()
     nn = flats;
     ytxt = 18;
     karaoke = 0;
+    showq_head = showq_tail = 0;	/* drop events of a skipped song */
     if (graphics) {
 	clear();
 	attrset(A_NORMAL);
