@@ -838,6 +838,8 @@ void open_sdl_dev(void)
   want.userdata = NULL;
 
   load_sf2(sf2_filename);
+  /* otherwise SDL swallows SIGINT/SIGTERM and Ctrl-C can't stop playback */
+  SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
   SDL_Init(SDL_INIT_AUDIO);
   sdl_dev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
                                 SDL_AUDIO_ALLOW_FORMAT_CHANGE);
